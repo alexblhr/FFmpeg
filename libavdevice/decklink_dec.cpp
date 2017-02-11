@@ -114,10 +114,9 @@ static unsigned long long avpacket_queue_size(AVPacketQueue *q)
 static int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
 {
     AVPacketList *pkt1;
-    struct decklink_cctx *cctx = (struct decklink_cctx *)avctx->priv_data;
     
     // Drop Packet if queue size is > bm_buffer_size in GB
-    if (avpacket_queue_size(q) >  cctx->bm_buffer_size * 1024 * 1024 * 1024 ) {
+    if (avpacket_queue_size(q) >  4 * 1024 * 1024 * 1024 ) {
         av_log(q->avctx, AV_LOG_WARNING,  "Decklink input buffer overrun!\n");
         return -1;
     }

@@ -40,6 +40,7 @@ struct decklink_cctx {
     int64_t teletext_lines;
     double preroll;
     int bm_vtype;
+    int bm_buffer_size;
     int audio_channels;
     int duplex_mode;
     DecklinkPtsSource audio_pts_source;

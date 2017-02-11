@@ -575,16 +575,27 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
     st->time_base.num      = ctx->bmd_tb_num;
     av_stream_set_r_frame_rate(st, av_make_q(st->time_base.den, st->time_base.num));
 
-    if (cctx->v210) {
-        st->codecpar->codec_id    = AV_CODEC_ID_V210;
-        st->codecpar->codec_tag   = MKTAG('V', '2', '1', '0');
-        st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
-    } else {
-        st->codecpar->codec_id    = AV_CODEC_ID_RAWVIDEO;
-        st->codecpar->format      = AV_PIX_FMT_UYVY422;
-        st->codecpar->codec_tag   = MKTAG('U', 'Y', 'V', 'Y');
-        st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 16, st->time_base.den, st->time_base.num);
+    
+    switch(cctx->bm_vtype) {
+        case 0: st->codecpar->codec_id    = AV_CODEC_ID_RAWVIDEO;
+                st->codecpar->format      = AV_PIX_FMT_UYVY422;
+                st->codecpar->codec_tag   = MKTAG('U', 'Y', 'V', 'Y');
+                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 16, st->time_base.den, st->time_base.num);
+                break;
+            
+        case 1: st->codecpar->codec_id    = AV_CODEC_ID_V210;
+                st->codecpar->codec_tag   = MKTAG('V', '2', '1', '0');
+                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
+                break;
+            
+        case 2: st->codecpar->codec_id    = AV_CODEC_ID_R210;
+                st->codecpar->codec_tag   = MKTAG('R', '2', '1', '0');
+                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
+                break;
+               
     }
+    
+
 
     avpriv_set_pts_info(st, 64, 1, 1000000);  /* 64 bits pts in us */
 
@@ -614,9 +625,13 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
         goto error;
     }
 
-    result = ctx->dli->EnableVideoInput(ctx->bmd_mode,
-                                        cctx->v210 ? bmdFormat10BitYUV : bmdFormat8BitYUV,
-                                        bmdVideoInputFlagDefault);
+    switch(cctx->bm_vtype) {
+        case 0: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat8BitYUV, bmdVideoInputFlagDefault); break;
+        case 1: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat10BitYUV, bmdVideoInputFlagDefault); break;
+        case 2: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat10BitRGB, bmdVideoInputFlagDefault); break;
+            
+    }
+
 
     if (result != S_OK) {
         av_log(avctx, AV_LOG_ERROR, "Cannot enable video input\n");

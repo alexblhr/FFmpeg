@@ -115,8 +115,8 @@ static int avpacket_queue_put(AVPacketQueue *q, AVPacket *pkt)
 {
     AVPacketList *pkt1;
 
-    // Drop Packet if queue size is > 1GB
-    if (avpacket_queue_size(q) >  1024 * 1024 * 1024 ) {
+    // Drop Packet if queue size is > 4GB
+    if (avpacket_queue_size(q) >  4 * 1024 * 1024 * 1024 ) {
         av_log(q->avctx, AV_LOG_WARNING,  "Decklink input buffer overrun!\n");
         return -1;
     }
@@ -296,7 +296,7 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
     if (videoFrame) {
         AVPacket pkt;
         av_init_packet(&pkt);
-        if (ctx->frameCount % 25 == 0) {
+        if (ctx->frameCount % 100 == 0) {
             unsigned long long qsize = avpacket_queue_size(&ctx->queue);
             av_log(avctx, AV_LOG_DEBUG,
                     "Frame received (#%lu) - Valid (%liB) - QSize %fMB\n",

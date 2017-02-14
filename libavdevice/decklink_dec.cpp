@@ -41,6 +41,8 @@ extern "C" {
 #include "decklink_common.h"
 #include "decklink_dec.h"
 
+
+
 #if CONFIG_LIBZVBI
 static uint8_t calc_parity_and_line_offset(int line)
 {
@@ -296,7 +298,7 @@ HRESULT decklink_input_callback::VideoInputFrameArrived(
     if (videoFrame) {
         AVPacket pkt;
         av_init_packet(&pkt);
-        if (ctx->frameCount % 100 == 0) {
+        if (ctx->frameCount % 25 == 0) {
             unsigned long long qsize = avpacket_queue_size(&ctx->queue);
             av_log(avctx, AV_LOG_DEBUG,
                     "Frame received (#%lu) - Valid (%liB) - QSize %fMB\n",
@@ -463,6 +465,8 @@ av_cold int ff_decklink_read_close(AVFormatContext *avctx)
 
 av_cold int ff_decklink_read_header(AVFormatContext *avctx)
 {
+        
+    BMDPixelFormat bmd_pixel_format = bmdFormat8BitYUV;
     struct decklink_cctx *cctx = (struct decklink_cctx *)avctx->priv_data;
     struct decklink_ctx *ctx;
     AVStream *st;
@@ -584,13 +588,15 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
                 break;
             
         case 1: st->codecpar->codec_id    = AV_CODEC_ID_V210;
+                st->codecpar->format      = AV_PIX_FMT_YUV422P10;
                 st->codecpar->codec_tag   = MKTAG('V', '2', '1', '0');
                 st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
                 break;
             
         case 2: st->codecpar->codec_id    = AV_CODEC_ID_R210;
+                st->codecpar->format      = AV_PIX_FMT_RGB48;
                 st->codecpar->codec_tag   = MKTAG('R', '2', '1', '0');
-                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
+                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 96, st->time_base.den, st->time_base.num * 3);
                 break;
                
     }
@@ -626,11 +632,14 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
     }
 
     switch(cctx->bm_vtype) {
-        case 0: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat8BitYUV, bmdVideoInputFlagDefault); break;
-        case 1: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat10BitYUV, bmdVideoInputFlagDefault); break;
-        case 2: result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmdFormat10BitRGB, bmdVideoInputFlagDefault); break;
+        case 0: bmd_pixel_format = bmdFormat8BitYUV;break;
+        case 1: bmd_pixel_format = bmdFormat10BitYUV;break;
+        case 2: bmd_pixel_format = bmdFormat10BitRGB;break;
+
             
     }
+    
+    result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmd_pixel_format, bmdVideoInputFlagDefault)
 
 
     if (result != S_OK) {

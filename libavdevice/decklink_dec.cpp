@@ -586,14 +586,18 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
                 st->codecpar->codec_tag   = MKTAG('U', 'Y', 'V', 'Y');
                 st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 16, st->time_base.den, st->time_base.num);
                 break;
-            
-        case 1: st->codecpar->codec_id    = AV_CODEC_ID_V210;
+        case 1: st->codecpar->codec_id    = AV_CODEC_ID_RAWVIDEO;
+                st->codecpar->format      = AV_PIX_FMT_ARGB;
+                st->codecpar->codec_tag   = MKTAG('A', 'R', 'G', 'B');
+                st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 32, st->time_base.den, st->time_base.num);
+                break;    
+        case 2: st->codecpar->codec_id    = AV_CODEC_ID_V210;
                 st->codecpar->format      = AV_PIX_FMT_YUV422P10;
                 st->codecpar->codec_tag   = MKTAG('V', '2', '1', '0');
                 st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 64, st->time_base.den, st->time_base.num * 3);
                 break;
             
-        case 2: st->codecpar->codec_id    = AV_CODEC_ID_R210;
+        case 3: st->codecpar->codec_id    = AV_CODEC_ID_R210;
                 st->codecpar->format      = AV_PIX_FMT_RGB48;
                 st->codecpar->codec_tag   = MKTAG('R', '2', '1', '0');
                 st->codecpar->bit_rate    = av_rescale(ctx->bmd_width * ctx->bmd_height * 96, st->time_base.den, st->time_base.num * 3);
@@ -633,8 +637,9 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
 
     switch(cctx->bm_vtype) {
         case 0: bmd_pixel_format = bmdFormat8BitYUV;break;
-        case 1: bmd_pixel_format = bmdFormat10BitYUV;break;
-        case 2: bmd_pixel_format = bmdFormat10BitRGB;break;
+        case 0: bmd_pixel_format = bmdFormat8BitARGB;break;
+        case 2: bmd_pixel_format = bmdFormat10BitYUV;break;
+        case 3: bmd_pixel_format = bmdFormat10BitRGB;break;
 
             
     }

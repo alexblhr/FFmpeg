@@ -40,9 +40,9 @@
 /* 120 ms / 2.5 ms = 48 frames (extremely improbable, but the encoder'll work) */
 #define OPUS_MAX_FRAMES_PER_PACKET 48
 
-#define OPUS_BLOCK_SIZE(x) (2 * 15 * (1 << (x + 2)))
+#define OPUS_BLOCK_SIZE(x) (2 * 15 * (1 << ((x) + 2)))
 
-#define OPUS_SAMPLES_TO_BLOCK_SIZE(x) (ff_log2(x / (2 * 15)) - 2)
+#define OPUS_SAMPLES_TO_BLOCK_SIZE(x) (ff_log2((x) / (2 * 15)) - 2)
 
 typedef struct OpusEncOptions {
     float max_delay_ms;
@@ -667,7 +667,7 @@ static void celt_quant_coarse(OpusEncContext *s, OpusRangeCoder *rc, CeltFrame *
                 ff_opus_rc_enc_laplace(rc, &q_en, pmod[i << 1] << 7, pmod[(i << 1) + 1] << 6);
             } else if (left >= 2) {
                 q_en = av_clip(q_en, -1, 1);
-                ff_opus_rc_enc_cdf(rc, ((q_en & 1) << 1) | (q_en < 0), ff_celt_model_energy_small);
+                ff_opus_rc_enc_cdf(rc, 2*q_en + 3*(q_en < 0), ff_celt_model_energy_small);
             } else if (left >= 1) {
                 q_en = av_clip(q_en, -1, 0);
                 ff_opus_rc_enc_log(rc, (q_en & 1), 1);
@@ -1076,6 +1076,9 @@ static av_cold int opus_encode_init(AVCodecContext *avctx)
     for (i = 0; i < CELT_BLOCK_NB; i++)
         if ((ret = ff_mdct15_init(&s->mdct[i], 0, i + 3, 68 << (CELT_BLOCK_NB - 1 - i))))
             return AVERROR(ENOMEM);
+
+    for (i = 0; i < OPUS_MAX_FRAMES_PER_PACKET; i++)
+        s->frame[i].block[0].emph_coeff = s->frame[i].block[1].emph_coeff = 0.0f;
 
     /* Zero out previous energy (matters for inter first frame) */
     for (ch = 0; ch < s->channels; ch++)

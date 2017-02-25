@@ -637,7 +637,7 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
 
     switch(cctx->bm_vtype) {
         case 0: bmd_pixel_format = bmdFormat8BitYUV;break;
-        case 0: bmd_pixel_format = bmdFormat8BitARGB;break;
+        case 1: bmd_pixel_format = bmdFormat8BitARGB;break;
         case 2: bmd_pixel_format = bmdFormat10BitYUV;break;
         case 3: bmd_pixel_format = bmdFormat10BitRGB;break;
 

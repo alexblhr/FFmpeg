@@ -644,7 +644,7 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
             
     }
     
-    result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmd_pixel_format, bmdVideoInputFlagDefault)
+    result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmd_pixel_format, bmdVideoInputFlagDefault);
 
 
     if (result != S_OK) {

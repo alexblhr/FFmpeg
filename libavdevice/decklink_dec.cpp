@@ -653,7 +653,7 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
         goto error;
     }
     
-    result = ctx->dli->EnableVideoOutput(ctx->bmd_mode, bmdVideoOutputFlagDefault);
+    result = ctx->dlo->EnableVideoOutput(ctx->bmd_mode, bmdVideoOutputFlagDefault);
 
 
     if (result != S_OK) {

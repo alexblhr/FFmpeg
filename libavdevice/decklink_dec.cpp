@@ -652,6 +652,16 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
         ret = AVERROR(EIO);
         goto error;
     }
+    
+    result = ctx->dli->EnableVideoOutput(ctx->bmd_mode, bmdVideoOutputFlagDefault);
+
+
+    if (result != S_OK) {
+        av_log(avctx, AV_LOG_ERROR, "Cannot enable video output\n");
+        ret = AVERROR(EIO);
+        goto error;
+    }
+    
 
     avpacket_queue_init (avctx, &ctx->queue);
 

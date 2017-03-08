@@ -646,6 +646,7 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
 
             
     }
+    ctx->dli->DisableVideoInput();
     
     result = ctx->dli->EnableVideoInput(ctx->bmd_mode, bmd_pixel_format, bmdVideoInputFlagDefault);
 
@@ -655,6 +656,8 @@ av_cold int ff_decklink_read_header(AVFormatContext *avctx)
         ret = AVERROR(EIO);
         goto error;
     }
+    
+    ctx->dli->DisableVideoInput();
     
 
     

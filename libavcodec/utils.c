@@ -2092,7 +2092,7 @@ static int64_t guess_correct_pts(AVCodecContext *ctx,
     return pts;
 }
 
-static int apply_param_change(AVCodecContext *avctx, AVPacket *avpkt)
+static int apply_param_change(AVCodecContext *avctx, const AVPacket *avpkt)
 {
     int size = 0, ret;
     const uint8_t *data;
@@ -2807,11 +2807,11 @@ static int do_decode(AVCodecContext *avctx, AVPacket *pkt)
     if (ret == AVERROR(EAGAIN))
         ret = pkt->size;
 
-    if (ret < 0)
-        return ret;
-
     if (avctx->internal->draining && !got_frame)
         avctx->internal->draining_done = 1;
+
+    if (ret < 0)
+        return ret;
 
     if (ret >= pkt->size) {
         av_packet_unref(avctx->internal->buffer_pkt);

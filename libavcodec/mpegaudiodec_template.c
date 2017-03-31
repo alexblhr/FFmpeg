@@ -457,7 +457,7 @@ static av_cold int decode_init(AVCodecContext * avctx)
 
 /* 12 points IMDCT. We compute it "by hand" by factorizing obvious
    cases. */
-static void imdct12(INTFLOAT *out, INTFLOAT *in)
+static void imdct12(INTFLOAT *out, SUINTFLOAT *in)
 {
     SUINTFLOAT in0, in1, in2, in3, in4, in5, t1, t2;
 
@@ -1665,7 +1665,7 @@ static int decode_frame(AVCodecContext * avctx, void *data, int *got_frame_ptr,
     header = AV_RB32(buf);
     if (header>>8 == AV_RB32("TAG")>>8) {
         av_log(avctx, AV_LOG_DEBUG, "discarding ID3 tag\n");
-        return buf_size;
+        return buf_size + skipped;
     }
     ret = avpriv_mpegaudio_decode_header((MPADecodeHeader *)s, header);
     if (ret < 0) {

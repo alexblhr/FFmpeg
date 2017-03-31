@@ -64,6 +64,8 @@ static const AVOption options[] = {
     { "reference",     NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = PTS_SRC_REFERENCE}, 0, 0, DEC, "pts_source"},
     { "wallclock",     NULL,                                          0,  AV_OPT_TYPE_CONST, { .i64 = PTS_SRC_WALLCLOCK}, 0, 0, DEC, "pts_source"},
     { "draw_bars",     "draw bars on signal loss" , OFFSET(draw_bars),    AV_OPT_TYPE_BOOL,  { .i64 = 1}, 0, 1, DEC },
+    { "bm_vtype", "video input type 0,1,2,3" , OFFSET(bm_vtype),         AV_OPT_TYPE_INT   , { .i64 = 0   }, 0, 3, DEC },
+    { "bm_buffer_size", "buffer size" , OFFSET(bm_buffer_size),         AV_OPT_TYPE_INT   , { .i64 = 1   }, 1, 4, DEC },
     { NULL },
 };
 

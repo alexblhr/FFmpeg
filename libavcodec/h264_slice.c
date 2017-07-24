@@ -197,10 +197,6 @@ static int alloc_picture(H264Context *h, H264Picture *pic)
     if (ret < 0)
         goto fail;
 
-    pic->crop     = h->ps.sps->crop;
-    pic->crop_top = h->ps.sps->crop_top;
-    pic->crop_left= h->ps.sps->crop_left;
-
     if (h->avctx->hwaccel) {
         const AVHWAccel *hwaccel = h->avctx->hwaccel;
         av_assert0(!pic->hwaccel_picture_private);
@@ -378,6 +374,8 @@ int ff_h264_update_thread_context(AVCodecContext *dst,
     h->avctx->coded_width   = h1->avctx->coded_width;
     h->avctx->width         = h1->avctx->width;
     h->avctx->height        = h1->avctx->height;
+    h->width_from_caller    = h1->width_from_caller;
+    h->height_from_caller   = h1->height_from_caller;
     h->coded_picture_number = h1->coded_picture_number;
     h->first_field          = h1->first_field;
     h->picture_structure    = h1->picture_structure;
@@ -492,6 +490,11 @@ static int h264_frame_start(H264Context *h)
     pic->sei_recovery_frame_cnt = h->sei.recovery_point.recovery_frame_cnt;
 
     pic->f->pict_type = h->slice_ctx[0].slice_type;
+
+    pic->f->crop_left   = h->crop_left;
+    pic->f->crop_right  = h->crop_right;
+    pic->f->crop_top    = h->crop_top;
+    pic->f->crop_bottom = h->crop_bottom;
 
     if ((ret = alloc_picture(h, pic)) < 0)
         return ret;
@@ -755,7 +758,7 @@ static void init_scan_tables(H264Context *h)
 static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
 {
 #define HWACCEL_MAX (CONFIG_H264_DXVA2_HWACCEL + \
-                     CONFIG_H264_D3D11VA_HWACCEL + \
+                     (CONFIG_H264_D3D11VA_HWACCEL * 2) + \
                      CONFIG_H264_VAAPI_HWACCEL + \
                      (CONFIG_H264_VDA_HWACCEL * 2) + \
                      CONFIG_H264_VIDEOTOOLBOX_HWACCEL + \
@@ -831,6 +834,7 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
 #endif
 #if CONFIG_H264_D3D11VA_HWACCEL
             *fmt++ = AV_PIX_FMT_D3D11VA_VLD;
+            *fmt++ = AV_PIX_FMT_D3D11;
 #endif
 #if CONFIG_H264_VAAPI_HWACCEL
             *fmt++ = AV_PIX_FMT_VAAPI;
@@ -868,25 +872,41 @@ static enum AVPixelFormat get_pixel_format(H264Context *h, int force_callback)
 static int init_dimensions(H264Context *h)
 {
     const SPS *sps = (const SPS*)h->ps.sps;
-    int width  = h->width  - (sps->crop_right + sps->crop_left);
-    int height = h->height - (sps->crop_top   + sps->crop_bottom);
+    int cr = sps->crop_right;
+    int cl = sps->crop_left;
+    int ct = sps->crop_top;
+    int cb = sps->crop_bottom;
+    int width  = h->width  - (cr + cl);
+    int height = h->height - (ct + cb);
     av_assert0(sps->crop_right + sps->crop_left < (unsigned)h->width);
     av_assert0(sps->crop_top + sps->crop_bottom < (unsigned)h->height);
 
     /* handle container cropping */
-    if (FFALIGN(h->avctx->width,  16) == FFALIGN(width,  16) &&
-        FFALIGN(h->avctx->height, 16) == FFALIGN(height, 16) &&
-        h->avctx->width  <= width &&
-        h->avctx->height <= height
-    ) {
-        width  = h->avctx->width;
-        height = h->avctx->height;
+    if (h->width_from_caller > 0 && h->height_from_caller > 0     &&
+        !sps->crop_top && !sps->crop_left                         &&
+        FFALIGN(h->width_from_caller,  16) == FFALIGN(width,  16) &&
+        FFALIGN(h->height_from_caller, 16) == FFALIGN(height, 16) &&
+        h->width_from_caller  <= width &&
+        h->height_from_caller <= height) {
+        width  = h->width_from_caller;
+        height = h->height_from_caller;
+        cl = 0;
+        ct = 0;
+        cr = h->width - width;
+        cb = h->height - height;
+    } else {
+        h->width_from_caller  = 0;
+        h->height_from_caller = 0;
     }
 
     h->avctx->coded_width  = h->width;
     h->avctx->coded_height = h->height;
     h->avctx->width        = width;
     h->avctx->height       = height;
+    h->crop_right          = cr;
+    h->crop_left           = cl;
+    h->crop_top            = ct;
+    h->crop_bottom         = cb;
 
     return 0;
 }
@@ -1423,14 +1443,14 @@ static int h264_field_start(H264Context *h, const H264SliceContext *sl,
      * We have to do that before the "dummy" in-between frame allocation,
      * since that can modify h->cur_pic_ptr. */
     if (h->first_field) {
+        int last_field = last_pic_structure == PICT_BOTTOM_FIELD;
         av_assert0(h->cur_pic_ptr);
         av_assert0(h->cur_pic_ptr->f->buf[0]);
         assert(h->cur_pic_ptr->reference != DELAYED_PIC_REF);
 
         /* Mark old field/frame as completed */
-        if (h->cur_pic_ptr->tf.owner == h->avctx) {
-            ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX,
-                                      last_pic_structure == PICT_BOTTOM_FIELD);
+        if (h->cur_pic_ptr->tf.owner[last_field] == h->avctx) {
+            ff_thread_report_progress(&h->cur_pic_ptr->tf, INT_MAX, last_field);
         }
 
         /* figure out if we have a complementary field pair */
@@ -1568,7 +1588,9 @@ static int h264_field_start(H264Context *h, const H264SliceContext *sl,
             return AVERROR_INVALIDDATA;
         }
     } else {
+        int field = h->picture_structure == PICT_BOTTOM_FIELD;
         release_unused_pictures(h, 0);
+        h->cur_pic_ptr->tf.owner[field] = h->avctx;
     }
     /* Some macroblocks can be accessed before they're available in case
     * of lost slices, MBAFF or threading. */
@@ -1778,9 +1800,13 @@ static int h264_slice_header_parse(const H264Context *h, H264SliceContext *sl,
     }
     if ((pps->weighted_pred && sl->slice_type_nos == AV_PICTURE_TYPE_P) ||
         (pps->weighted_bipred_idc == 1 &&
-         sl->slice_type_nos == AV_PICTURE_TYPE_B))
-        ff_h264_pred_weight_table(&sl->gb, sps, sl->ref_count,
-                                  sl->slice_type_nos, &sl->pwt, h->avctx);
+         sl->slice_type_nos == AV_PICTURE_TYPE_B)) {
+        ret = ff_h264_pred_weight_table(&sl->gb, sps, sl->ref_count,
+                                  sl->slice_type_nos, &sl->pwt,
+                                  picture_structure, h->avctx);
+        if (ret < 0)
+            return ret;
+    }
 
     sl->explicit_ref_marking = 0;
     if (nal->ref_idc) {
@@ -1799,7 +1825,7 @@ static int h264_slice_header_parse(const H264Context *h, H264SliceContext *sl,
     }
 
     sl->last_qscale_diff = 0;
-    tmp = pps->init_qp + get_se_golomb(&sl->gb);
+    tmp = pps->init_qp + (unsigned)get_se_golomb(&sl->gb);
     if (tmp > 51 + 6 * (sps->bit_depth_luma - 8)) {
         av_log(h->avctx, AV_LOG_ERROR, "QP %u out of range\n", tmp);
         return AVERROR_INVALIDDATA;
@@ -1886,7 +1912,8 @@ static int h264_slice_init(H264Context *h, H264SliceContext *sl,
 
     if (sl->slice_type_nos == AV_PICTURE_TYPE_B && !sl->direct_spatial_mv_pred)
         ff_h264_direct_dist_scale_factor(h, sl);
-    ff_h264_direct_ref_list_init(h, sl);
+    if (!h->setup_finished)
+        ff_h264_direct_ref_list_init(h, sl);
 
     if (h->avctx->skip_loop_filter >= AVDISCARD_ALL ||
         (h->avctx->skip_loop_filter >= AVDISCARD_NONKEY &&

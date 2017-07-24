@@ -406,11 +406,15 @@ static uint64_t sniff_channel_order(uint8_t (*layout_map)[3], int tags)
 /**
  * Save current output configuration if and only if it has been locked.
  */
-static void push_output_configuration(AACContext *ac) {
+static int push_output_configuration(AACContext *ac) {
+    int pushed = 0;
+
     if (ac->oc[1].status == OC_LOCKED || ac->oc[0].status == OC_NONE) {
         ac->oc[0] = ac->oc[1];
+        pushed = 1;
     }
     ac->oc[1].status = OC_NONE;
+    return pushed;
 }
 
 /**
@@ -1207,7 +1211,7 @@ static av_cold int aac_decode_init(AVCodecContext *avctx)
     AAC_RENAME_32(ff_mdct_init)(&ac->mdct_small,  8, 1, 1.0 / RANGE15(128.0));
     AAC_RENAME_32(ff_mdct_init)(&ac->mdct_ltp,   11, 0, RANGE15(-2.0));
 #if !USE_FIXED
-    ret = ff_mdct15_init(&ac->mdct480, 1, 5, -1.0f);
+    ret = ff_mdct15_init(&ac->mdct480, 1, 5, 1.0f/(16*1024*960));
     if (ret < 0)
         return ret;
 #endif
@@ -2177,7 +2181,11 @@ static int decode_cce(AACContext *ac, GetBitContext *gb, ChannelElement *che)
     coup->coupling_point += get_bits1(gb) || (coup->coupling_point >> 1);
 
     sign  = get_bits(gb, 1);
-    scale = AAC_RENAME(cce_scale)[get_bits(gb, 2)];
+#if USE_FIXED
+    scale = get_bits(gb, 2);
+#else
+    scale = cce_scale[get_bits(gb, 2)];
+#endif
 
     if ((ret = decode_ics(ac, sce, gb, 0, 0)))
         return ret;
@@ -2191,6 +2199,10 @@ static int decode_cce(AACContext *ac, GetBitContext *gb, ChannelElement *che)
             cge = coup->coupling_point == AFTER_IMDCT ? 1 : get_bits1(gb);
             gain = cge ? get_vlc2(gb, vlc_scalefactors.table, 7, 3) - 60: 0;
             gain_cache = GET_GAIN(scale, gain);
+#if USE_FIXED
+            if ((abs(gain_cache)-1024) >> 3 > 30)
+                return AVERROR(ERANGE);
+#endif
         }
         if (coup->coupling_point == AFTER_IMDCT) {
             coup->gain[c][0] = gain_cache;
@@ -2208,6 +2220,10 @@ static int decode_cce(AACContext *ac, GetBitContext *gb, ChannelElement *che)
                                     t >>= 1;
                                 }
                                 gain_cache = GET_GAIN(scale, t) * s;
+#if USE_FIXED
+                                if ((abs(gain_cache)-1024) >> 3 > 30)
+                                    return AVERROR(ERANGE);
+#endif
                             }
                         }
                         coup->gain[c][idx] = gain_cache;
@@ -2381,7 +2397,7 @@ static int decode_extension_payload(AACContext *ac, GetBitContext *gb, int cnt,
  * @param   decode  1 if tool is used normally, 0 if tool is used in LTP.
  * @param   coef    spectral coefficients
  */
-static void apply_tns(INTFLOAT coef[1024], TemporalNoiseShaping *tns,
+static void apply_tns(INTFLOAT coef_param[1024], TemporalNoiseShaping *tns,
                       IndividualChannelStream *ics, int decode)
 {
     const int mmm = FFMIN(ics->tns_max_bands, ics->max_sfb);
@@ -2389,6 +2405,7 @@ static void apply_tns(INTFLOAT coef[1024], TemporalNoiseShaping *tns,
     int bottom, top, order, start, end, size, inc;
     INTFLOAT lpc[TNS_MAX_ORDER];
     INTFLOAT tmp[TNS_MAX_ORDER+1];
+    UINTFLOAT *coef = coef_param;
 
     for (w = 0; w < ics->num_windows; w++) {
         bottom = ics->num_swb;
@@ -2418,7 +2435,7 @@ static void apply_tns(INTFLOAT coef[1024], TemporalNoiseShaping *tns,
                 // ar filter
                 for (m = 0; m < size; m++, start += inc)
                     for (i = 1; i <= FFMIN(m, order); i++)
-                        coef[start] -= AAC_MUL26(coef[start - i * inc], lpc[i - 1]);
+                        coef[start] -= AAC_MUL26((INTFLOAT)coef[start - i * inc], lpc[i - 1]);
             } else {
                 // ma filter
                 for (m = 0; m < size; m++, start += inc) {
@@ -2656,7 +2673,7 @@ static void imdct_and_windowing_eld(AACContext *ac, SingleChannelElement *sce)
     }
 #if !USE_FIXED
     if (n == 480)
-        ac->mdct480->imdct_half(ac->mdct480, buf, in, 1, -1.f/(16*1024*960));
+        ac->mdct480->imdct_half(ac->mdct480, buf, in, 1);
     else
 #endif
         ac->mdct.imdct_half(&ac->mdct_ld, buf, in);
@@ -2792,9 +2809,9 @@ static void spectral_to_sample(AACContext *ac, int samples)
                     int j;
                     /* preparation for resampler */
                     for(j = 0; j<samples; j++){
-                        che->ch[0].ret[j] = (int32_t)av_clipl_int32((int64_t)che->ch[0].ret[j]<<7)+0x8000;
+                        che->ch[0].ret[j] = (int32_t)av_clip64((int64_t)che->ch[0].ret[j]*128, INT32_MIN, INT32_MAX-0x8000)+0x8000;
                         if(type == TYPE_CPE)
-                            che->ch[1].ret[j] = (int32_t)av_clipl_int32((int64_t)che->ch[1].ret[j]<<7)+0x8000;
+                            che->ch[1].ret[j] = (int32_t)av_clip64((int64_t)che->ch[1].ret[j]*128, INT32_MIN, INT32_MAX-0x8000)+0x8000;
                     }
                 }
 #endif /* USE_FIXED */
@@ -3026,7 +3043,13 @@ static int aac_decode_frame_int(AVCodecContext *avctx, void *data,
         case TYPE_PCE: {
             uint8_t layout_map[MAX_ELEM_ID*4][3];
             int tags;
-            push_output_configuration(ac);
+
+            int pushed = push_output_configuration(ac);
+            if (pce_found && !pushed) {
+                err = AVERROR_INVALIDDATA;
+                goto fail;
+            }
+
             tags = decode_pce(avctx, &ac->oc[1].m4ac, layout_map, gb,
                               payload_alignment);
             if (tags < 0) {
